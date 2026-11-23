@@ -6,6 +6,7 @@ use App\Models\TicketSelection;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\View\View;
 
 class TicketSelectionController extends Controller
@@ -41,6 +42,7 @@ class TicketSelectionController extends Controller
                 'ticket_number' => $data['ticket_number'],
                 'twitter_username' => ltrim($data['twitter_username'], '@'),
                 'ip_address' => $request->ip(),
+                'ip_location' => $this->resolveIpLocation($request->ip()),
                 'user_agent' => substr((string) $request->userAgent(), 0, 1000),
             ]);
         } catch (QueryException $exception) {
@@ -69,5 +71,30 @@ class TicketSelectionController extends Controller
     {
         return str_contains(strtolower($exception->getMessage()), 'unique')
             || str_contains(strtolower($exception->getMessage()), 'duplicate');
+    }
+
+    private function resolveIpLocation(?string $ip): ?string
+    {
+        if (! $ip || ! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return null;
+        }
+
+        try {
+            $response = Http::acceptJson()
+                ->timeout(3)
+                ->get('https://ipwho.is/'.$ip);
+
+            if (! $response->successful() || ! $response->json('success')) {
+                return null;
+            }
+
+            return collect([
+                $response->json('city'),
+                $response->json('region'),
+                $response->json('country'),
+            ])->filter()->implode(', ') ?: null;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }
